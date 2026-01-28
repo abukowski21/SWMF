@@ -101,7 +101,7 @@ contains
     end if
 
     ! Store grid size
-    iSize = Grid_C(IE_) % nCoord_D(1)
+    iSize = Grid_C(IE_) % nCoord_D(1) / 2 + 1
     jSize = Grid_C(IE_) % nCoord_D(2)
 
   end subroutine couple_ie_ua_init
