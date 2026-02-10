@@ -117,10 +117,10 @@ contains
 
   !============================================================================
   subroutine UA_put_from_ie(Buffer_IIV, iSizeIn, jSizeIn, nVarIn, &
-       NameVarIn_V, iBlock)
+       NameVarIn_V)
 
     !INPUT/OUTPUT ARGUMENTS:
-    integer, intent(in)           :: iSizeIn, jSizeIn, nVarIn, iBlock
+    integer, intent(in)           :: iSizeIn, jSizeIn, nVarIn
     real, intent(in)              :: Buffer_IIV(iSizeIn,jSizeIn,nVarIn)
     character (len=*),intent(in)  :: NameVarIn_V(nVarIn)
 
