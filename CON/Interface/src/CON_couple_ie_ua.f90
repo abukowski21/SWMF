@@ -32,8 +32,11 @@ module CON_couple_ie_ua
   logical :: IsInitialized = .false.
 
   ! Information about number and names of variables to share:
-  integer, save :: nVarIeUa, nVarUaIe, nUaMagLon, nUaMagLat
-  character(len=3), allocatable :: NameVarIeUa_V(:), NameVarUaIe_V(:)
+  integer, save :: nVarIeUa, nVarIeSpecUa, nVarUaIe, nUaMagLon, nUaMagLat, &
+                    nEngUA
+
+  character(len=3), allocatable :: NameVarIeUa_V(:), NameVarUaIe_V(:), &
+                                   NameVarIeSpecUa_V(:)
 
   ! Size of the 2D spherical structured IE grid
   integer, save :: iSize, jSize
@@ -54,7 +57,6 @@ contains
 
     logical :: DoTest, DoTestMe
 
-    integer :: nEngUA
     real, allocatable :: EngUA(:)
     character(len=*), parameter:: NameSub = 'couple_ie_ua_init'
     !--------------------------------------------------------------------------
@@ -66,9 +68,10 @@ contains
 
     ! IE to UA coupling: set names and number of variables
     ! Get number of variables to be passed from UA to IE, pass to IE
-    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nEngUA)
+    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nVarIeSpecUa, nEngUA)
     call transfer_integer(UA_, IE_, nVarIeUa,  UseSourceRootOnly=.false.)
     call transfer_integer(UA_, IE_, nEngUA, UseSourceRootOnly=.false.)
+    call transfer_integer(UA_, IE_, nVarIeSpecUa, UseSourceRootOnly=.false.)
 
     ! Allocate the array holding the variable names.
     if(allocated(NameVarIeUa_V)) deallocate(NameVarIeUa_V)
@@ -78,14 +81,19 @@ contains
     if(allocated(EngUA)) deallocate(EngUA)
     allocate(EngUA(nEngUA))
 
+    if(allocated(NameVarIeSpecUA_V)) deallocate(NameVarIeSpecUA_V)
+    allocate(NameVarIeSpecUA_V(nVarIeSpecUa))
+
     ! Get variables names to be passed; transfer to IE
     ! Obtain number of magnetic (not total grid) lats/lons used by UA.
-    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nEngUA, &
-         NameVarIeUa_V, nUaMagLat, nUaMagLon, EngUA)
+    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nVarIeSpecUa, nEngUA, &
+         NameVarIeUa_V, NameVarIeSpecUa_V, nUaMagLat, nUaMagLon, EngUA)
     call transfer_integer(UA_, IE_, nUaMagLat, UseSourceRootOnly=.false.)
     call transfer_integer(UA_, IE_, nUaMagLon, UseSourceRootOnly=.false.)
     call transfer_string_array(UA_, IE_, nVarIeUa, NameVarIeUa_V, &
          UseSourceRootOnly=.false.)
+    call transfer_string_array(UA_, IE_, nVarIeSpecUa, NameVarIeSpecUa_V, &
+         UseSourceRootOnly=.false.) 
     call transfer_real_array(UA_, IE_, nEngUA, EngUA, UseSourceRootOnly=.false.)
 
     ! UA to IE coupling: set names and number of variables
@@ -132,7 +140,8 @@ contains
     real, intent(in) :: tSimulation     ! simulation time at coupling
 
     ! Buffer for all shared variables on the 2D IE grid
-    real, allocatable :: Buffer_IIV(:,:,:)
+    ! Second buffer is for energy spectrum variables 
+    real, allocatable :: Buffer_IIV(:,:,:), Buffer_IIIV(:,:,:,:)
 
     ! Index for north and south hemispheres
     integer :: iBlock
@@ -141,25 +150,45 @@ contains
     logical :: DoTest, DoTestMe
     character(len=*), parameter:: NameSub = 'couple_ie_ua'
     !--------------------------------------------------------------------------
-    call CON_set_do_test(NameSub,DoTest,DoTestMe)
+     call CON_set_do_test(NameSub,DoTest,DoTestMe)
 
-    ! Allocate buffers both in IE (source) and UA (target):
-    allocate(Buffer_IIV(iSize,jSize,nVarIeUa))
+     ! Allocate buffers both in IE (source) and UA (target):
+     allocate(Buffer_IIV(iSize,jSize,nVarIeUa))
+     if(nVarIeSpecUa > 0) then
+          allocate(Buffer_IIIV(iSize, jSize, nEngUA, nVarIeSpecUa))
 
+          ! Pass full ionosphere all at once (future proofs for >2 Procs)
+          ! Get all variables from IE:
+          if(is_proc(IE_)) call IE_get_for_ua(Buffer_IIV, iSize, jSize, &
+               nVarIeUa, NameVarIeUa_V, tSimulation, nVarIeSpecUa, Buffer_IIIV,&
+               NameVarIeSpecUa_V)
+
+          ! Transfer data:
+          call transfer_real_array(IE_, UA_, iSize*jSize*nVarIeUa, Buffer_IIV)
+          call transfer_real_array(IE_, UA_, iSize*jSize*nVarIeSpecUa*nEngUA, &
+                                   Buffer_IIIV)
+
+          ! UA receives & handles data:
+          if(is_proc(UA_)) call UA_put_from_ie(Buffer_IIV, iSize, jSize, &
+               nVarIeUa, NameVarIeUa_V, nVarIeSpecUa, Buffer_IIIV, &
+               NameVarIeSpecUa_V)
+               
+          deallocate(Buffer_IIIV)
+     end if
      ! Pass full ionosphere all at once (future proofs for >2 Procs)
      ! Get all variables from IE:
      if(is_proc(IE_)) call IE_get_for_ua(Buffer_IIV, iSize, jSize, &
-          nVarIeUa, NameVarIeUa_V, tSimulation)
+          nVarIeUa, NameVarIeUa_V, tSimulation, nVarIeSpecUa)
 
      ! Transfer data:
      call transfer_real_array(IE_, UA_, iSize*jSize*nVarIeUa, Buffer_IIV)
 
      ! UA receives & handles data:
      if(is_proc(UA_)) call UA_put_from_ie(Buffer_IIV, iSize, jSize, &
-          nVarIeUa, NameVarIeUa_V)
+          nVarIeUa, NameVarIeUa_V, nVarIeSpecUa)
 
-    ! Deallocate buffer to save memory
-    deallocate(Buffer_IIV)
+     ! Deallocate buffer to save memory
+     deallocate(Buffer_IIV)
 
   end subroutine couple_ie_ua
   !============================================================================
