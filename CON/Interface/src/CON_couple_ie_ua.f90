@@ -47,11 +47,15 @@ contains
     ! Performs handshaking between UA and IE concerning names and number
     ! of variables to transfer.
 
-    use CON_transfer_data, ONLY: transfer_integer, transfer_string_array
+    use CON_transfer_data, ONLY: transfer_integer, transfer_string_array, &
+                                 transfer_real_array
     use UA_wrapper, ONLY: UA_get_info_for_ie
     use IE_wrapper, ONLY: IE_get_info_for_ua
 
     logical :: DoTest, DoTestMe
+
+    integer :: nEngUA
+    real, allocatable :: EngUA(:)
     character(len=*), parameter:: NameSub = 'couple_ie_ua_init'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
@@ -62,25 +66,31 @@ contains
 
     ! IE to UA coupling: set names and number of variables
     ! Get number of variables to be passed from UA to IE, pass to IE
-    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa)
+    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nEngUA)
     call transfer_integer(UA_, IE_, nVarIeUa,  UseSourceRootOnly=.false.)
+    call transfer_integer(UA_, IE_, nEngUA, UseSourceRootOnly=.false.)
 
     ! Allocate the array holding the variable names.
     if(allocated(NameVarIeUa_V)) deallocate(NameVarIeUa_V)
     allocate(NameVarIeUa_V(nVarIeUa))
 
+    ! Allocate array to pass UA energy grid
+    if(allocated(EngUA)) deallocate(EngUA)
+    allocate(EngUA(nEngUA))
+
     ! Get variables names to be passed; transfer to IE
     ! Obtain number of magnetic (not total grid) lats/lons used by UA.
-    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, &
-         NameVarIeUa_V, nUaMagLat, nUaMagLon)
+    if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nEngUA, &
+         NameVarIeUa_V, nUaMagLat, nUaMagLon, EngUA)
     call transfer_integer(UA_, IE_, nUaMagLat, UseSourceRootOnly=.false.)
     call transfer_integer(UA_, IE_, nUaMagLon, UseSourceRootOnly=.false.)
     call transfer_string_array(UA_, IE_, nVarIeUa, NameVarIeUa_V, &
          UseSourceRootOnly=.false.)
+    call transfer_real_array(UA_, IE_, nEngUA, EngUA, UseSourceRootOnly=.false.)
 
     ! UA to IE coupling: set names and number of variables
     ! Get number of variables to be passed from IE to UA, pass to UA
-    if(is_proc(IE_)) call IE_get_info_for_ua(nVarUaIe)
+    if(is_proc(IE_)) call IE_get_info_for_ua(nVarUaIe, nEngUA)
     call transfer_integer(IE_, UA_, nVarUaIe, UseSourceRootOnly=.false.)
 
     ! Allocate the array holding the variable names.
@@ -88,7 +98,8 @@ contains
     allocate(NameVarUaIe_V(nVarUaIe))
 
     ! Get variables names to be passed; transfer to IE
-    if(is_proc(IE_)) call IE_get_info_for_ua(nVarUaIe, NameVarUaIe_V)
+    if(is_proc(IE_)) call IE_get_info_for_ua(nVarUaIe, nEngUA, NameVarUaIe_V, &
+                                             EngUA)
     call transfer_string_array(IE_, UA_, nVarUaIe, NameVarUaIe_V, &
          UseSourceRootOnly=.false.)
 
