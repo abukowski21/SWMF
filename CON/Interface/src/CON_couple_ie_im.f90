@@ -68,8 +68,11 @@ contains
     ! static, the router is formed here for the whole run.
 
     use CON_world, ONLY: get_comp_info
+    use CON_transfer_data, ONLY: transfer_integer
+
 
     integer :: nEngIM
+    real, allocatable :: EngIM(:,:)
 
     !--------------------------------------------------------------------------
     if(IsInitialized) RETURN
@@ -87,7 +90,23 @@ contains
        if(NameVersionIm(1:3) == 'CIM')then
          ! IE-IM/CIMI coupling is being updated
          call IM_get_info_for_ie(nEngIM)
+
+         call transfer_integer(IM_, IE_, nEngIM, UseSourceRootOnly=.false.)
+
          call IE_get_info_for_im(use_comp(UA_), nEngIM, nVarImIe)
+
+         call transfer_integer(IE_, IM_, nVarImIe)
+
+         ! Allocate the array holding the variable names.
+         if(allocated(EngIM)) deallocate(EngIM)
+         allocate(EngIM(2, nEngIM))
+
+         call IM_get_info_for_ie(nEngIM, EngIM)
+
+         call transfer_real_array(IM_, IE_, 2*nEngIM, &
+               EngIM, UseSourceRootOnly=.false.)
+
+         call IE_get_info_for_im(use_comp(UA_), nEngIM, nVarImIe, EngIM)
       end if
 
        ! IE-IM/RCM coupling uses the coupling toolkit
@@ -128,6 +147,8 @@ contains
             mapping=map_ie_to_im,   &
             interpolate=bilinear_interpolation)
     end if
+
+    if (allocated(EngIM)) deallocate(EngIM)
 
   end subroutine couple_ie_im_init
   !============================================================================
