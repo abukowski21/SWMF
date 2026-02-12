@@ -123,6 +123,7 @@ contains
     iSize = Grid_C(IE_) % nCoord_D(1)
     jSize = Grid_C(IE_) % nCoord_D(2)
 
+    if(allocated(EngUA)) deallocate(EngUA)
   end subroutine couple_ie_ua_init
   !============================================================================
   subroutine couple_ie_ua(tSimulation)
