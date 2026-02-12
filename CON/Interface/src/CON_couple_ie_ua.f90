@@ -117,6 +117,8 @@ contains
             NameVarUaIe_V
        write(*,*) '   UA requests ', nVarIeUa, ' variables from IE:', &
             NameVarIeUa_V
+       if (nVarIeSpecUa > 0) write(*,*) '   UA requests', nVarIeSpecUa, &
+            ' spectral variables from IE:', NameVarIeSpecUa_V
     end if
 
     ! Store grid size
