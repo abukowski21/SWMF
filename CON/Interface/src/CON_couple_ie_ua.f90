@@ -87,7 +87,8 @@ contains
     ! Get variables names to be passed; transfer to IE
     ! Obtain number of magnetic (not total grid) lats/lons used by UA.
     if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nVarIeSpecUa, nEngUA, &
-         NameVarIeUa_V, NameVarIeSpecUa_V, nUaMagLat, nUaMagLon, EngUA)
+         NameVar_V=NameVarIeUa_V, NameVarSpec_V=NameVarIeSpecUa_V, &
+         nMagLat=nUaMagLat, nMagLon=nUaMagLon, EngUA=EngUA)
     call transfer_integer(UA_, IE_, nUaMagLat, UseSourceRootOnly=.false.)
     call transfer_integer(UA_, IE_, nUaMagLon, UseSourceRootOnly=.false.)
     call transfer_string_array(UA_, IE_, nVarIeUa, NameVarIeUa_V, &
