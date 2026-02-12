@@ -89,11 +89,11 @@ contains
        ! Get extra info from IE when using CIMI
        if(NameVersionIm(1:3) == 'CIM')then
          ! IE-IM/CIMI coupling is being updated
-         call IM_get_info_for_ie(nEngIM)
+         if(is_proc(IM_)) call IM_get_info_for_ie(nEngIM)
 
          call transfer_integer(IM_, IE_, nEngIM, UseSourceRootOnly=.false.)
 
-         call IE_get_info_for_im(use_comp(UA_), nEngIM, nVarImIe)
+         if(is_proc(IE_)) call IE_get_info_for_im(use_comp(UA_), nEngIM, nVarImIe)
 
          call transfer_integer(IE_, IM_, nVarImIe)
 
@@ -101,12 +101,13 @@ contains
          if(allocated(EngIM)) deallocate(EngIM)
          allocate(EngIM(2, nEngIM))
 
-         call IM_get_info_for_ie(nEngIM, EngIM)
+         if(is_proc(IM_)) call IM_get_info_for_ie(nEngIM, EngIM)
 
          call transfer_real_array(IM_, IE_, 2*nEngIM, &
                EngIM, UseSourceRootOnly=.false.)
 
-         call IE_get_info_for_im(use_comp(UA_), nEngIM, nVarImIe, EngIM)
+         if(is_proc(IE_)) call IE_get_info_for_im(use_comp(UA_), nEngIM, &
+                                                  nVarImIe, EngIM)
       end if
 
        ! IE-IM/RCM coupling uses the coupling toolkit
