@@ -61,6 +61,7 @@ contains
     character(len=*), parameter:: NameSub = 'couple_ie_ua_init'
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
+    if(.not.is_proc(IE_) .and. .not.is_proc(UA_)) RETURN
 
     if(DoTestMe) write(*,*) NameSub//' called;, IsInitialized=', IsInitialized
     if(IsInitialized) RETURN

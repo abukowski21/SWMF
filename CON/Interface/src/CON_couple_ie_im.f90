@@ -75,6 +75,7 @@ contains
     real, allocatable :: EngIM(:,:)
 
     !--------------------------------------------------------------------------
+    if(.not.is_proc(IE_) .and. .not.is_proc(IM_)) RETURN
     if(IsInitialized) RETURN
     IsInitialized = .true.
 
