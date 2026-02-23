@@ -87,7 +87,8 @@ contains
        nPhi   = size(Grid_C(IE_) % Coord2_I)
     else
        ! Get extra info from IE when using CIMI
-       if(NameVersionIm(1:3) == 'CIM')then
+       if(NameVersionIm(1:3) == 'CIM' .and. &
+         (is_proc(IE_) .or. is_proc(IM_))) then
          ! IE-IM/CIMI coupling is being updated
          if(is_proc(IM_)) call IM_get_info_for_ie(nEngIM)
 
