@@ -38,7 +38,6 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub,DoTest,DoTestMe)
 
-    if(.not.is_proc(GM_) .and. .not.is_proc(UA_)) RETURN
     ! Initialize point couplers
 
     CouplerUAtoGM%iCompSource = UA_
