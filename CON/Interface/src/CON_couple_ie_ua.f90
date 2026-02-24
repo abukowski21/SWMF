@@ -62,6 +62,7 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub, DoTest, DoTestMe)
 
+    if(.not. is_proc(IE_) .and. .not. is_proc(UA_)) return
     if(DoTestMe) write(*,*) NameSub//' called;, IsInitialized=', IsInitialized
     if(IsInitialized) RETURN
     IsInitialized = .true.
@@ -69,9 +70,9 @@ contains
     ! IE to UA coupling: set names and number of variables
     ! Get number of variables to be passed from UA to IE, pass to IE
     if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nVarIeSpecUa, nEngUA)
-    call transfer_integer(UA_, IE_, nVarIeUa,  UseSourceRootOnly=.false.)
-    call transfer_integer(UA_, IE_, nEngUA, UseSourceRootOnly=.false.)
-    call transfer_integer(UA_, IE_, nVarIeSpecUa, UseSourceRootOnly=.false.)
+     write(*,*)' IE proc'
+    call transfer_integer(UA_, IE_, nVarIeUa,  nEngUA, nVarIeSpecUA, &
+                         UseSourceRootOnly=.false.)
 
     ! Allocate the array holding the variable names.
     if(allocated(NameVarIeUa_V)) deallocate(NameVarIeUa_V)
