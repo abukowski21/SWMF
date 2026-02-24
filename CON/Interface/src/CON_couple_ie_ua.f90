@@ -70,7 +70,7 @@ contains
     ! IE to UA coupling: set names and number of variables
     ! Get number of variables to be passed from UA to IE, pass to IE
     if(is_proc(UA_)) call UA_get_info_for_ie(nVarIeUa, nVarIeSpecUa, nEngUA)
-     write(*,*)' IE proc'
+
     call transfer_integer(UA_, IE_, nVarIeUa,  nEngUA, nVarIeSpecUA, &
                          UseSourceRootOnly=.false.)
 
