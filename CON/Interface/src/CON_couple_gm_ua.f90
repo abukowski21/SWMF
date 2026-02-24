@@ -25,6 +25,7 @@ module CON_couple_gm_ua
 
   ! Router communicator info
   type(CouplePointsType) :: CouplerUAtoGM
+  character(len=lNameVersion):: NameVersionIm
 
 contains
   !============================================================================
@@ -38,13 +39,17 @@ contains
     !--------------------------------------------------------------------------
     call CON_set_do_test(NameSub,DoTest,DoTestMe)
 
+    if (.not. is_proc(GM_) .and. .not. is_proc(UA_)) return
+
     ! Initialize point couplers
+    call get_comp_info(IM_,NameVersion=NameVersionIm)
+    if(NameVersionIm == 'MGITM') then 
+      CouplerUAtoGM%iCompSource = UA_
+      CouplerUAtoGM%iCompTarget = GM_
+      CouplerUAtoGM%nVar        = 5
 
-    CouplerUAtoGM%iCompSource = UA_
-    CouplerUAtoGM%iCompTarget = GM_
-    CouplerUAtoGM%nVar        = 5
-
-    call couple_points_init(CouplerUAtoGM)
+      call couple_points_init(CouplerUAtoGM)
+    end if
 
   end subroutine couple_ua_gm_init
   !============================================================================
