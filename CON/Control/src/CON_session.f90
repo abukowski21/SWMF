@@ -121,19 +121,20 @@ contains
     end if
 
     ! Processors that are inactive (may be used by OpenMP threads) are done
-    if(.not.is_proc(CON_)) RETURN
+    if(is_proc(CON_)) then
 
-    ! Couple for the first time
-    do iCouple = 1, nCouple
+     ! Couple for the first time
+     do iCouple = 1, nCouple
 
-       iCompSource = iCompCoupleOrder_II(1,iCouple)
-       iCompTarget = iCompCoupleOrder_II(2,iCouple)
+          iCompSource = iCompCoupleOrder_II(1,iCouple)
+          iCompTarget = iCompCoupleOrder_II(2,iCouple)
 
-       ! Couple iCompSource --> iCompTarget
-       if((IsProc_C(iCompSource) .or. IsProc_C(iCompTarget)) .and. &
-            Couple_CC(iCompSource, iCompTarget) % DoThis) &
-            call couple_two_comp(iCompSource, iCompTarget, tSimulation)
-    end do
+          ! Couple iCompSource --> iCompTarget
+          if((IsProc_C(iCompSource) .or. IsProc_C(iCompTarget)) .and. &
+               Couple_CC(iCompSource, iCompTarget) % DoThis) &
+               call couple_two_comp(iCompSource, iCompTarget, tSimulation)
+     end do
+    endif
 
     if(iSession==1)then
        call timing_stop('SETUP')
