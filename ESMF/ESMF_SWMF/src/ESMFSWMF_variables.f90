@@ -48,9 +48,12 @@ module ESMFSWMF_variables
   ! Testing
   logical, public :: DoTest = .false.
 
+  ! Debugging
+  logical, public :: DebugMode = .false.
+  
   ! Field values and coordinate coefficients for testing
   real, public, parameter:: FieldTest_V(nVarIpe2Rim) = [3.0, 5.0]
-  real, public, parameter:: CoordCoefTest = 0.1
+  real, public, parameter:: CoordCoefTest = 1e-5
 
   ! Change of Hall field during ESMF run
   real, public, parameter:: dHallPerDtTest = 0.4
@@ -167,6 +170,18 @@ contains
     else
        if(iProc == 0) write(*,*) 'ESMF_SWMF ', &
             'DoTest is set to ', DoTest
+    end if
+
+    ! Read debugging option
+    call ESMF_ConfigGetAttribute(Config, DebugMode, &
+         label='DebugMode:', rc=iError)
+    if(iError /= ESMF_SUCCESS) then
+       if(iProc == 0) write(*,*) 'ESMF_SWMF did not read ', &
+            'DebugMode: setting default value = false'
+       DebugMode = .false.
+    else
+       if(iProc == 0) write(*,*) 'ESMF_SWMF ', &
+            'DebugMode is set to ', DebugMode
     end if
 
     call ESMF_ConfigDestroy(Config, rc=iError)

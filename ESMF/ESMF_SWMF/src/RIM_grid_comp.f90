@@ -16,12 +16,13 @@ module RIM_grid_comp
   use ESMFSWMF_variables, ONLY: &
        NameFieldIpe2Rim_V, nVarIpe2Rim, NameFieldRim2Ipe_V, nVarRim2Ipe, &
        add_fields, write_log, write_error, &
-       DoTest, FieldTest_V, CoordCoefTest, dHallPerDtTest, &
+       DoTest, DebugMode, FieldTest_V, CoordCoefTest, dHallPerDtTest, &
        get_coords, update_coordinates, DoShiftDataCoupling, &
        get_sm_to_mag_angle
 
   ! Size of ionosphere grid in SWMF/IE model (nLat is for one hemisphere!)
   use IE_ModSize, ONLY: nLat => IONO_nTheta, nLon => IONO_nPsi
+
   ! These arrays are indexed by co-latitude Theta, reverse of latitude Lat
   use ModIonosphere, ONLY: &
        HallNorth_II => IONO_NORTH_SigmaH_IPE, &
@@ -37,6 +38,9 @@ module RIM_grid_comp
        DiffNorth_II => IONO_NORTH_EFlux, & ! To be checked !
        DiffSouth_II => IONO_SOUTH_EFlux
 
+  ! For debugging
+  use ModProcIE, ONLY: iProcIE => iProc
+  
   ! Conversion to radians
 
   implicit none
@@ -51,10 +55,10 @@ module RIM_grid_comp
   ! This is a 2D spherical grid representing the height integrated ionosphere.
   ! RIM is in SM coordinates (aligned with Sun-Earth direction):
   ! +Z points to north magnetic dipole and the Sun is in the +X-Z halfplane.
-  real(ESMF_KIND_R8), allocatable :: LonSM_I(:), LatSM_I(:)
+  real(ESMF_KIND_R8), allocatable :: LonSm_I(:), LatSm_I(:)
   integer:: MinLon, MaxLon, MinLat, MaxLat
 
-  ! dPhiSm2Mag is the rotation angle from SM to MAG coordinates 
+  ! dPhiSm2Mag is the rotation angle from SM to MAG coordinates
   ! in the counter-clockwise direction.
   real(ESMF_KIND_R8) :: dPhiSm2Mag
 
@@ -117,9 +121,9 @@ contains
     iError = ESMF_FAILURE
 
     do n = 1, nVarIpe2Rim
-       ! IPE -> RIM coupling 
+       ! IPE -> RIM coupling
        call NUOPC_Advertise(ImportState, &
-            standardName=trim(NameFieldIpe2Rim_V(n)), &
+            standardName=NameFieldIpe2Rim_V(n), &
             TransferOfferGeomObject='will provide', rc=iError)
        if(iError /= ESMF_SUCCESS) call my_error('NUOPC_Advertise - import')
     end do
@@ -127,7 +131,7 @@ contains
     do n = 1, nVarRim2Ipe
        ! RIM -> IPE coupling
        call NUOPC_Advertise(ExportState, &
-            standardName=trim(NameFieldRim2Ipe_V(n)), &
+            standardName=NameFieldRim2Ipe_V(n), &
             TransferOfferGeomObject='will provide', rc=iError)
        if(iError /= ESMF_SUCCESS) call my_error('NUOPC_Advertise - export')
     end do
@@ -149,8 +153,9 @@ contains
     type(ESMF_VM)    :: Vm
     type(ESMF_Grid)  :: ImportGrid, ExportGrid
     integer          :: PetCount, i, j
+    integer, allocatable :: petMap(:,:,:)
 
-    real(ESMF_KIND_R8), pointer :: Lon_I(:), Lat_I(:)  
+    real(ESMF_KIND_R8), pointer :: Lon_I(:), Lat_I(:)
     !--------------------------------------------------------------------------
     call write_log("RIM_grid_comp:init_realize routine called")
     iError = ESMF_FAILURE
@@ -163,13 +168,20 @@ contains
     call ESMF_VMGet(Vm, petCount=PetCount, rc=iError)
     if(iError /= ESMF_SUCCESS) call my_error('ESMF_VMGet')
 
+    ! Reverse order
+    allocate(petMap(1,petCount,1))
+    do i = 1, petCount
+       petMap(1,i,1) = petCount-i
+    enddo
+
     ! RIM grid is node based. Internally it is Colat-Lon grid, but we pretend
     ! here that it is a Lat-Lon grid, so ESMF can use it.
     ! Lon from 0 to 360-dPhi (periodic), Lat from -90 to +90
-    ImportGrid = ESMF_GridCreateNoPeriDim(maxIndex=[nLon-1, nLat-1], &
+    ! Both hemispheres have nLat nodes.
+    ImportGrid = ESMF_GridCreateNoPeriDim(maxIndex=[nLon-1, 2*(nLat-1)], &
          regDecomp=[1, petCount], coordDep1=[1], coordDep2=[2], &
          coordSys=ESMF_COORDSYS_CART, indexflag=ESMF_INDEX_GLOBAL, &
-         name="RIM grid", rc=iError)
+         petMap=petMap, name="RIM grid", rc=iError)
     if(iError /= ESMF_SUCCESS)call my_error('ESMF_GridCreateNoPeriDim')
 
     ! Add corner coordinates to the grid
@@ -188,28 +200,29 @@ contains
     write(*,'(a,2i4)')'RIM grid: Lon_I Min, Max=', MinLon, MaxLon
     write(*,'(a,2i4)')'RIM grid: Lat_I Min, Max=', MinLat, MaxLat
 
-    allocate(LonSM_I(MinLon:MaxLon))
-    allocate(LatSM_I(MinLat:MaxLat))
+    allocate(LonSm_I(MinLon:MaxLon))
+    allocate(LatSm_I(MinLat:MaxLat))
 
     do i = MinLon, MaxLon
-       LonSM_I(i) = (i-1)*(360.0/(nLon-1)) - 180
+       LonSm_I(i) = (i-1)*(360.0/(nLon-1)) - 180
     end do
-    write(*,*)'RIM grid: LonSM_I(Min,Min+1,Max)=', &
-         LonSM_I([MinLon,MinLon+1,MaxLon])
+    write(*,*)'RIM grid: LonSm_I(Min,Min+1,Max)=', &
+         LonSm_I([MinLon,MinLon+1,MaxLon])
 
     do j = MinLat, MaxLat
-       LatSM_I(j) = (j-1)*(180./(nLat-1)) - 90
+       ! nLat-1 cells per hemisphere
+       LatSm_I(j) = (j-1)*(90./(nLat-1)) - 90
     end do
-    write(*,*)'RIM grid: LatSM_I(Min,Min+1,Max)=', &
-         LatSM_I([MinLat,MinLat+1,MaxLat])
+    write(*,*)'RIM grid: LatSm_I(Min,Min+1,Max)=', &
+         LatSm_I([MinLat,MinLat+1,MaxLat])
 
-    if(DoShiftDataCoupling) then 
-       Lon_I = LonSM_I
-       Lat_I = LatSM_I
+    if(DoShiftDataCoupling) then
+       Lon_I = LonSm_I
+       Lat_I = LatSm_I
        call get_sm_to_mag_angle(ExternalClock, dPhiSm2Mag, iError)
-    else 
+    else
        ! Sets the corner coordinates
-       call update_coordinates(ImportGrid, ExternalClock, LonSM_I, LatSM_I, &
+       call update_coordinates(ImportGrid, ExternalClock, LonSm_I, LatSm_I, &
             .true., dPhiSm2Mag = dPhiSm2Mag, iError=iError)
        if(iError /= ESMF_SUCCESS) call my_error('update_coordinates')
     end if
@@ -220,10 +233,10 @@ contains
     if(iError /= ESMF_SUCCESS) call my_error('add_fields - import')
 
     !---- Create Export grid (same as Import grid) ----------------------------
-    ExportGrid = ESMF_GridCreateNoPeriDim(maxIndex=[nLon-1, nLat-1], &
+    ExportGrid = ESMF_GridCreateNoPeriDim(maxIndex=[nLon-1, 2*(nLat-1)], &
          regDecomp=[1, petCount], coordDep1=[1], coordDep2=[2], &
          coordSys=ESMF_COORDSYS_CART, indexflag=ESMF_INDEX_GLOBAL, &
-         name="RIM grid", rc=iError)
+         petMap=petMap, name="RIM grid", rc=iError)
     if(iError /= ESMF_SUCCESS)call my_error('ESMF_GridCreateNoPeriDim')
 
     ! Add corner coordinates to the grid
@@ -234,8 +247,8 @@ contains
     call get_coords(ExportGrid, Lon_I, Lat_I, iError)
     if(iError /= ESMF_SUCCESS) call my_error('get_coords')
 
-    Lon_I = LonSM_I
-    Lat_I = LatSM_I
+    Lon_I = LonSm_I
+    Lat_I = LatSm_I
 
     ! Add fields to the RIM export state
     call add_fields(ExportGrid, ExportState, nVarRim2Ipe, &
@@ -248,7 +261,6 @@ contains
   end subroutine my_init_realize
   !============================================================================
   subroutine my_data_init(gComp, iError)
-
     type(ESMF_GridComp):: gComp
     integer, intent(out):: iError
     !--------------------------------------------------------------------------
@@ -262,7 +274,7 @@ contains
     integer, intent(out):: iError
 
     ! Access to the data
-    type(ESMF_State):: ImportState    
+    type(ESMF_State):: ImportState
     type(ESMF_Clock):: Clock
     real(ESMF_KIND_R8), pointer     :: Ptr_II(:,:)
     real(ESMF_KIND_R8), allocatable :: Data_VII(:,:,:)
@@ -276,15 +288,15 @@ contains
     ! Current time (needed for test only)
     real(ESMF_KIND_R8) :: tCurrent
 
-    ! Grid 
+    ! Grid
     type(ESMF_Grid) :: Grid
 
     ! Misc variables
     type(ESMF_Field):: Field
     character(len=4):: NameField
-    ! character(len=ESMF_MAXSTR) :: TimeStr
+    character(len=ESMF_MAXSTR) :: TimeStr
     integer:: i, j, iLeft, iRight, iLat, iTheta
-    real(ESMF_KIND_R8):: Exact_V(2), LonMag, dLon, CoefL, CoefR    
+    real(ESMF_KIND_R8):: Exact_V(2), LonMag, dLon, CoefL, CoefR
     !--------------------------------------------------------------------------
     call write_log("RIM_grid_comp:run routine called")
     iError = ESMF_FAILURE
@@ -302,9 +314,11 @@ contains
     if(iError /= ESMF_SUCCESS) call my_error('ESMF_TimeIntervalGet current')
     tCurrent = iSec + 0.001*iMilliSec
 
-    ! Get time in ISO format for debugging
-    ! call ESMF_TimeGet(CurrTime, timeStringISOFrac=TimeStr , rc=iError)
-    ! if(iError /= ESMF_SUCCESS) call my_error('ESMF_TimeGet ISO')
+    ! Get time in ISO format
+    if (DebugMode) then
+       call ESMF_TimeGet(CurrTime, timeStringISOFrac=timeStr , rc=iError)
+       if(iError /= ESMF_SUCCESS) call my_error('ESMF_TimeGet ISO')
+    end if
 
     ! Obtain pointer to the data obtained from the ESMF component
     allocate(Data_VII(nVarIpe2Rim,MinLon:MaxLon,MinLat:MaxLat), stat=iError)
@@ -317,29 +331,31 @@ contains
        call ESMF_StateGet(ImportState, itemName=NameField, &
             field=Field, rc=iError)
        if(iError /= ESMF_SUCCESS) call my_error("ESMF_StateGet")
-       !   call ESMF_FieldWrite(Field, "rim_import_"//trim(timeStr)//".nc", &
-       !        overwrite=.true., rc=iError)
-       !   if(iError /= ESMF_SUCCESS) call my_error("ESMF_FieldWrite")
+       if (DebugMode) then
+          call ESMF_FieldWrite(Field, "rim_import_"//trim(timeStr)//".nc", &
+               overwrite=.true., rc=iError)
+          if(iError /= ESMF_SUCCESS) call my_error("ESMF_FieldWrite")
+       end if
        call ESMF_FieldGet(Field, farrayPtr=Ptr_II, rc=iError)
        if(iError /= ESMF_SUCCESS) call my_error("ESMF_FieldGet")
 
-       if(DoShiftDataCoupling) then        
+       if(DoShiftDataCoupling) then
           ! Ptr_II is the data in IPE(MAG) coordinates,
-          ! need to shift and interpolate to RIM(SM) coordinates. 
+          ! need to shift and interpolate to RIM(SM) coordinates.
           do i = MinLon, MaxLon
-             dLon = LonSM_I(2) - LonSM_I(1)
-             LonMag = modulo(LonSM_I(i) + 180 - dPhiSm2Mag, 360.0) - 180
+             dLon = LonSm_I(2) - LonSm_I(1)
+             LonMag = modulo(LonSm_I(i) + 180 - dPhiSm2Mag, 360.0) - 180
 
-             ! The starting position of Ptr_II lon (in MAG) is 
-             ! the same as LonSM_I(1)
-             iLeft = floor((LonMag - LonSM_I(1))/dLon) + 1           
+             ! The starting position of Ptr_II lon (in MAG) is
+             ! the same as LonSm_I(1)
+             iLeft = floor((LonMag - LonSm_I(1))/dLon) + 1
              iRight = iLeft + 1
-             CoefL = (LonSM_I(iRight) - LonMag)/dLon
+             CoefL = (LonSm_I(iRight) - LonMag)/dLon
              CoefR = 1 - CoefL
              Data_VII(iVar,i,:) = &
                   Ptr_II(iLeft,:)*CoefL + Ptr_II(iRight,:)*CoefR
           end do
-       else 
+       else
           Data_VII(iVar,:,:) = Ptr_II(:,:)
        end if
     end do
@@ -354,41 +370,51 @@ contains
           ! add time dependence for Hall field
           Exact_V(1) = Exact_V(1) + tCurrent*dHallPerDtTest
 
-          LonMag = modulo(LonSM_I(i) + 180 - dPhiSm2Mag, 360.0) - 180
+          LonMag = modulo(LonSm_I(i) + 180 - dPhiSm2Mag, 360.0) - 180
           ! add spatial dependence
-          Exact_V = Exact_V + CoordCoefTest*abs(LonMag)*(90-abs(LatSM_I(j)))
+          Exact_V = Exact_V + CoordCoefTest*abs(LonMag)*(90-abs(LatSm_I(j)))
 
           ! Exact_V = LonMag*sin(Lon_I(i)*cDegToRad)*cos(Lat_I(j)*cDegToRad)
           if(abs(Data_VII(1,i,j) - Exact_V(1)) > 1e-10) &
                write(*,*) 'ERROR in SWMF_GridComp ', &
                'at i, j, Lon, Lat, Hall, Exact, Error=', &
-               i, j, LonSM_I(i), LatSM_I(j), Data_VII(1,i,j), &
+               i, j, LonSm_I(i), LatSm_I(j), Data_VII(1,i,j), &
                Exact_V(1), Data_VII(1,i,j) - Exact_V(1)
           if(abs(Data_VII(2,i,j) - Exact_V(2)) > 1e-10) &
                write(*,*) 'ERROR in SWMF_GridComp ', &
                'at i, j, Lon, Lat, Pede, Exact, Error=', &
-               i, j, LonSM_I(i), LatSM_I(j), Data_VII(2,i,j), &
+               i, j, LonSm_I(i), LatSm_I(j), Data_VII(2,i,j), &
                Exact_V(2), Data_VII(2,i,j) - Exact_V(2)
        end do; end do
        write(*,*)'SWMF_GridComp value of Data(MidLon,MidLat)=', &
             Data_VII(:,(MinLon+MaxLon)/2,(MinLat+MaxLat)/2)
     else
        ! Put Data_VII into RIM conductances
-       if(LatSm_I(MinLat) < 0 .and. .not.allocated(HallSouth_II)) &
-            allocate(HallSouth_II(nLat,nLon), PedSouth_II(nLat,nLon))
-       if(LatSm_I(MaxLat) > 0 .and. .not.allocated(PedNorth_II)) &
-            allocate(HallNorth_II(nLat,nLon), PedNorth_II(nLat,nLon))
-          
+       if(LatSm_I(MinLat) < 0 .and. .not.allocated(HallSouth_II))then
+          allocate(HallSouth_II(nLat,nLon), PedSouth_II(nLat,nLon))
+          write(*,*) 'RIM_grid_comp: allocated *South_II on iProcIE=', iProcIE
+          ! Initialize to zero, because the equator may not get set
+          HallSouth_II = 0.0; PedSouth_II = 0.0
+       end if
+       if(LatSm_I(MaxLat) > 0 .and. .not.allocated(PedNorth_II))then
+          allocate(HallNorth_II(nLat,nLon), PedNorth_II(nLat,nLon))
+          write(*,*) 'RIM_grid_comp: allocated *North_II on iProcIE=', iProcIE
+          ! Initialize to zero, because the equator may not get set
+          HallNorth_II = 0.0; PedNorth_II = 0.0
+       end if
+
        do iLat = MinLat, MaxLat
-          iTheta = MaxLat - iLat + 1
-          if(LatSm_I(iLat) > 0.0)then
+          if(LatSm_I(iLat) >= 0.0 .and. LatSm_I(MaxLat) > 0)then
              ! Northern hemisphere
-             HallNorth_II(iTheta,:) = Data_VII(1,iLat,:)
-             PedNorth_II(iTheta,:)  = Data_VII(2,iLat,:)
-          else
+             iTheta = MaxLat - iLat + 1
+             HallNorth_II(iTheta,:) = Data_VII(1,:,iLat)
+             PedNorth_II(iTheta,:)  = Data_VII(2,:,iLat)
+          end if
+          if(LatSm_I(iLat) <= 0.0 .and. LatSm_I(MinLat) < 0)then
              ! Southern hemisphere
-             HallSouth_II(iTheta,:) = Data_VII(1,iLat,:)
-             PedSouth_II(iTheta,:)  = Data_VII(2,iLat,:)             
+             iTheta = nLat - iLat + 1
+             HallSouth_II(iTheta,:) = Data_VII(1,:,iLat)
+             PedSouth_II(iTheta,:)  = Data_VII(2,:,iLat)
           endif
        end do
     end if
@@ -397,14 +423,14 @@ contains
     deallocate(Data_VII, stat=iError)
     if(iError /= 0) call my_error('deallocate(Data_VII)')
 
-    if(DoShiftDataCoupling) then 
+    if(DoShiftDataCoupling) then
        call get_sm_to_mag_angle(Clock, dPhiSm2Mag, iError)
        call update_export_state(gComp, iError)
-    else 
+    else
        call ESMF_FieldGet(Field, grid=Grid, rc=iError)
        if(iError /= ESMF_SUCCESS) call my_error('ESMF_FieldGetGrid')
 
-       call update_coordinates(Grid, Clock, LonSM_I, LatSM_I, .true., &
+       call update_coordinates(Grid, Clock, LonSm_I, LatSm_I, .true., &
             dPhiSm2Mag=dPhiSm2Mag, iError=iError)
        if(iError /= ESMF_SUCCESS) call my_error('update_coordinates')
     end if
@@ -423,13 +449,13 @@ contains
     type(ESMF_Field):: Field
     type(ESMF_Grid):: Grid
 
-    real(ESMF_KIND_R8), pointer :: Ptr_II(:,:), Lon_I(:), Lat_I(:)  
+    real(ESMF_KIND_R8), pointer :: Ptr_II(:,:), Lon_I(:), Lat_I(:)
     real(ESMF_KIND_R8), allocatable :: Data_VII(:,:,:)
     integer:: i, j, iVar, itemCount
     character(len=4):: NameField
 
     integer:: iLeft, iRight
-    real(ESMF_KIND_R8):: Coef, dLon, LonSM, CoefL, CoefR
+    real(ESMF_KIND_R8):: Coef, dLon, LonSm, CoefL, CoefR
     !--------------------------------------------------------------------------
     call write_log("RIM_grid_comp:update_export_state routine called")
 
@@ -445,7 +471,7 @@ contains
 
        ! Check field is available or not
        ! Export fields may not be defined in case of uni-directional coupling
-       call ESMF_StateGet(ExportState, itemSearch=trim(NameField), &
+       call ESMF_StateGet(ExportState, itemSearch=NameField, &
             itemCount=itemCount, rc=iError)
 
        if (itemCount /= 0) then
@@ -471,22 +497,22 @@ contains
              Data_VII(iVar,i,j) = abs(Lon_I(i))*abs(Lat_I(j))*Coef
           end do; end do
 
-          if(DoShiftDataCoupling) then 
+          if(DoShiftDataCoupling) then
              do i = MinLon, MaxLon
-                dLon = LonSM_I(2) - LonSM_I(1)
+                dLon = LonSm_I(2) - LonSm_I(1)
 
                 ! For Ptr_II, its coordinates are in MAG system.
                 ! Get the corresponding Lon in SM system.
-                LonSM = modulo(LonSM_I(i) + 180 + dPhiSm2Mag, 360.0) - 180
+                LonSm = modulo(LonSm_I(i) + 180 + dPhiSm2Mag, 360.0) - 180
 
-                iLeft = floor((LonSM - LonSM_I(1))/dLon) + 1
+                iLeft = floor((LonSm - LonSm_I(1))/dLon) + 1
                 iRight = iLeft + 1
-                CoefL = (LonSM_I(iRight) - LonSM)/dLon
+                CoefL = (LonSm_I(iRight) - LonSm)/dLon
                 CoefR = 1.0 - CoefL
                 Ptr_II(i,:) = Data_VII(iVar,iLeft,:)*CoefL &
                      +        Data_VII(iVar,iRight,:)*CoefR
              end do
-          else 
+          else
              Ptr_II(:,:) = Data_VII(iVar,:,:)
           end if
 
